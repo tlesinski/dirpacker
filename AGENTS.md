@@ -1,48 +1,48 @@
-# dirpacker — instrukcje dla asystenta AI
+# dirpacker — AI assistant instructions
 
-## O projekcie
+## About the project
 
-Narzędzie CLI w Pythonie do pakowania katalogu z plikami tekstowymi do jednego pliku tekstowego i rozpakowywania z powrotem.
+A Python CLI tool for packing a directory of text files into a single text file and unpacking it again.
 
-## Komendy uruchomieniowe
+## Commands
 
 ```bash
-# pakowanie
-python dirpacker.py pack <katalog_zrodlowy> <plik_wynikowy.dp>
+# pack
+python dirpacker.py pack <source_directory> <output_file.dp>
 
-# rozpakowywanie
-python dirpacker.py unpack <plik.dp> <katalog_docelowy>
+# unpack
+python dirpacker.py unpack <archive.dp> <destination_directory>
 
-# pakowanie wszystkich plików (próba odczytu jako tekst)
-python dirpacker.py pack --all <katalog> <plik.dp>
+# pack all files (attempt to read them as text)
+python dirpacker.py pack --all <directory> <archive.dp>
 ```
 
-## Struktura kodu
+## Code structure
 
-- `dirpacker.py` — jedyny plik źródłowy
-- `pack()` — generuje dynamiczny prefiks (`gen_prefix`), rekurencyjnie przechodzi katalog, zapisuje znaczniki `{prefix}[FILE]`, `{prefix}[SIZE]` i treść; otacza treść `{prefix}[BEGIN]`/`{prefix}[END]`; na koniec dopisuje puste katalogi jako `{prefix}[DIR]`
-- `unpack()` — czyta plik linia po linii w trybie binarnym, odczytuje prefiks z linii `[DIRPCK]`, parsuje znaczniki, odtwarza pliki i katalogi; treść między `[BEGIN]` a `[END]` odtwarza liniowo — odporny na konwersję `\n`↔`\r\n`
-- `is_text_file()` — sprawdza rozszerzenie względem zbioru `TEXT_EXTENSIONS`
-- `get_rel_path()` — zwraca relatywną ścieżkę z forward slashami
-- `gen_prefix()` — generuje unikalny prefiks `DIRPCK_YYYYMMDD_HHMMSS_` na podstawie bieżącego czasu
+- `dirpacker.py` — the only source file
+- `pack()` — generates a dynamic prefix (`gen_prefix`), recursively walks the directory, writes `{prefix}[FILE]` and `{prefix}[SIZE]` markers and the contents; wraps contents in `{prefix}[BEGIN]`/`{prefix}[END]`; appends empty directories as `{prefix}[DIR]` at the end
+- `unpack()` — reads the archive line by line in binary mode, reads the prefix from the `[DIRPCK]` header, parses markers, and restores files and directories; restores contents between `[BEGIN]` and `[END]` line by line, making it resilient to `\n`↔`\r\n` conversion
+- `is_text_file()` — checks the extension against the `TEXT_EXTENSIONS` set
+- `get_rel_path()` — returns a relative path with forward slashes
+- `gen_prefix()` — generates a unique `DIRPCK_YYYYMMDD_HHMMSS_` prefix based on the current time
 
-## Format pliku
+## Archive format
 
 ```
 [DIRPCK] DIRPCK_20260702_123456_
-DIRPCK_20260702_123456_[FILE] rel/ścieżka/pliku.txt
-DIRPCK_20260702_123456_[SIZE] <liczba_bajtów>
+DIRPCK_20260702_123456_[FILE] path/to/file.txt
+DIRPCK_20260702_123456_[SIZE] <size_in_bytes>
 DIRPCK_20260702_123456_[BEGIN]
-<treść plika — dokładnie N bajtów>
+<file contents — exactly N bytes>
 DIRPCK_20260702_123456_[END]
-DIRPCK_20260702_123456_[DIR] rel/ścieżka/pustego/katalogu
+DIRPCK_20260702_123456_[DIR] path/to/empty/directory
 ```
 
-Pierwsza linia `[DIRPCK] <prefix>` definiuje dynamiczny prefiks (datetime). Każdy znacznik w pliku jest poprzedzony tym prefiksem — gwarantuje brak kolizji marker-content. Plik zapisywany w trybie binarnym.
+The first `[DIRPCK] <prefix>` line defines the dynamic prefix (date and time). Every marker in the archive is preceded by this prefix, preventing collisions between markers and file contents. The archive is written in binary mode.
 
-`[BEGIN]` i `[END]` otaczają treść pliku. `unpack` czyta linia po linii aż do `[END]` — dzięki temu konwersja `\n` ↔ `\r\n` (Unix/Windows) nie powoduje błędów. `[SIZE]` służy do walidacji rozmiaru.
+`[BEGIN]` and `[END]` wrap the file contents. `unpack` reads line by line until `[END]`, so converting `\n` ↔ `\r\n` (Unix/Windows) does not cause errors. `[SIZE]` is used to validate the size.
 
-## Rozszerzenia plików tekstowych
+## Text-file extensions
 
 ```python
 TEXT_EXTENSIONS = {
@@ -53,17 +53,17 @@ TEXT_EXTENSIONS = {
 }
 ```
 
-## Ignorowane katalogi
+## Ignored directories
 
 ```python
 IGNORE_DIRS = {'.git', '__pycache__', 'node_modules', '.svn', '.hg', '.idea', '.vscode', '.venv', 'venv'}
 ```
 
-## Ważne zasady
+## Important rules
 
-1. Wszystkie ścieżki w pliku `.dp` używają `/` (nawet na Windows)
-2. Plik paczki jest zawsze w trybie binarnym (`'wb'`, `'rb'`)
-3. `[SIZE]` wskazuje dokładną liczbę bajtów do odczytania — nie ma ryzyka kolizji marker-content
-4. Puste katalogi są zapisywane na końcu pliku jako `[DIR]`, po wszystkich plikach
-5. `os.makedirs(..., exist_ok=True)` chroni przed błędami przy zagnieżdżonych ścieżkach
-6. Przy `pack` katalogi ignorowane (`IGNORE_DIRS`) są odfiltrowywane w `os.walk` przez `dirs[:] = [...]`
+1. All paths in `.dp` archives use `/` (even on Windows).
+2. Archive files are always opened in binary mode (`'wb'`, `'rb'`).
+3. `[SIZE]` specifies the exact number of bytes to read, preventing collisions between markers and file contents.
+4. Empty directories are written at the end of the archive as `[DIR]` entries, after all files.
+5. `os.makedirs(..., exist_ok=True)` prevents errors when creating nested paths.
+6. During `pack`, ignored directories (`IGNORE_DIRS`) are filtered in `os.walk` using `dirs[:] = [...]`.

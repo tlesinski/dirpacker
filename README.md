@@ -1,66 +1,66 @@
 # dirpacker
 
-Narzędzie CLI do pakowania katalogu (tylko pliki tekstowe) do pojedynczego pliku tekstowego i rozpakowywania z powrotem.
+A CLI tool for packing a directory (text files only) into a single text file and unpacking it again.
 
-## Użycie
+## Usage
 
 ```
-python dirpacker.py pack <katalog_zrodlowy> <plik_wynikowy>
-python dirpacker.py unpack <plik_paczki> <katalog_docelowy>
-python dirpacker.py pack --all <katalog> <plik_wynikowy>
+python dirpacker.py pack <source_directory> <output_file>
+python dirpacker.py unpack <archive_file> <destination_directory>
+python dirpacker.py pack --all <directory> <output_file>
 ```
 
-### Opcje
+### Options
 
-| Opcja | Opis |
+| Option | Description |
 |---|---|
-| `pack` | Pakuje katalog do pliku `.dp` |
-| `unpack` | Rozpakowuje plik `.dp` do katalogu |
-| `--all`, `-a` | Włącza wszystkie pliki (próba odczytu jako tekst niezależnie od rozszerzenia) |
+| `pack` | Packs a directory into a `.dp` file |
+| `unpack` | Unpacks a `.dp` file into a directory |
+| `--all`, `-a` | Includes all files (attempts to read them as text regardless of extension) |
 
-### Przykład
+### Example
 
 ```
-python dirpacker.py pack ./moj_projekt projekt.dp
-python dirpacker.py unpack projekt.dp ./odtworzony_projekt
+python dirpacker.py pack ./my_project project.dp
+python dirpacker.py unpack project.dp ./restored_project
 ```
 
-## Format pliku
+## File format
 
-Własny, tekstowy format markerowy z dynamicznym prefiksem:
+A custom marker-based text format with a dynamic prefix:
 
 ```
 [DIRPCK] DIRPCK_20260702_123456_
 DIRPCK_20260702_123456_[FILE] src/app.py
 DIRPCK_20260702_123456_[SIZE] 256
 DIRPCK_20260702_123456_[BEGIN]
-...treść pliku...
+...file contents...
 DIRPCK_20260702_123456_[END]
 DIRPCK_20260702_123456_[FILE] src/utils/helper.sql
 DIRPCK_20260702_123456_[SIZE] 128
 DIRPCK_20260702_123456_[BEGIN]
-...treść...
+...contents...
 DIRPCK_20260702_123456_[END]
 DIRPCK_20260702_123456_[DIR] src/data
 ```
 
-Pierwsza linia `[DIRPCK]` zawiera wygenerowany prefiks (z datą/godziną), który jest powtarzany przed każdym znacznikiem — eliminuje ryzyko kolizji z treścią plików.
+The first `[DIRPCK]` line contains the generated prefix (based on the date and time), which is repeated before every marker to eliminate the risk of collisions with file contents.
 
-Znaczniki:
+Markers:
 
-| Znacznik | Opis |
+| Marker | Description |
 |---|---|
-| `{PREFIX}[FILE] <ścieżka>` | Początek pliku (ścieżka względna, `/` jako separator) |
-| `{PREFIX}[SIZE] <N>` | Rozmiar treści w bajtach |
-| `{PREFIX}[BEGIN]` | Początek treści pliku |
-| `{PREFIX}[END]` | Koniec treści pliku |
-| `{PREFIX}[DIR] <ścieżka>` | Pusty katalog do utworzenia |
+| `{PREFIX}[FILE] <path>` | Begins a file entry (relative path, using `/` as the separator) |
+| `{PREFIX}[SIZE] <N>` | Content size in bytes |
+| `{PREFIX}[BEGIN]` | Beginning of the file contents |
+| `{PREFIX}[END]` | End of the file contents |
+| `{PREFIX}[DIR] <path>` | Empty directory to create |
 
-`[BEGIN]` i `[END]` otaczają treść pliku — `unpack` czyta linia po linii aż do `[END]`, dzięki czemu konwersja `\n`↔`\r\n` (Unix/Windows) nie powoduje błędów.
+`[BEGIN]` and `[END]` wrap the file contents. `unpack` reads line by line until `[END]`, so converting `\n` ↔ `\r\n` (Unix/Windows) does not cause errors.
 
-## Obsługiwane rozszerzenia
+## Supported extensions
 
-Tylko pliki tekstowe są domyślnie pakowane:
+By default, only files with these text-file extensions are packed:
 
 ```
 .txt .py .md .json .xml .html .css .js
@@ -69,8 +69,8 @@ Tylko pliki tekstowe są domyślnie pakowane:
 .asm .inc .h .c .cpp .hpp .java .kt .swift
 ```
 
-Pliki binarne (`.png`, `.exe`, `.jpg` itp.) są pomijane.
+Binary files (`.png`, `.exe`, `.jpg`, etc.) are skipped.
 
-## Ignorowane katalogi
+## Ignored directories
 
 `.git`, `__pycache__`, `node_modules`, `.svn`, `.hg`, `.idea`, `.vscode`, `.venv`, `venv`
