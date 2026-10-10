@@ -51,12 +51,12 @@ Markers:
 | Marker | Description |
 |---|---|
 | `{PREFIX}[FILE] <path>` | Begins a file entry (relative path, using `/` as the separator) |
-| `{PREFIX}[SIZE] <N>` | Content size in bytes |
+| `{PREFIX}[SIZE] <N>` | Content size in bytes, ignoring carriage returns (`\r`) |
 | `{PREFIX}[BEGIN]` | Beginning of the file contents |
 | `{PREFIX}[END]` | End of the file contents |
 | `{PREFIX}[DIR] <path>` | Empty directory to create |
 
-`[BEGIN]` and `[END]` wrap the file contents. `unpack` reads line by line until `[END]`, so converting `\n` ↔ `\r\n` (Unix/Windows) does not cause errors.
+`[BEGIN]` and `[END]` wrap the file contents. `unpack` reads line by line until `[END]`. `[SIZE]` validates the content size while ignoring carriage returns (`\r`), so converting line endings between Unix and Windows does not change the size check. This normalization affects the size check only; file contents are not otherwise modified.
 
 ## Supported extensions
 

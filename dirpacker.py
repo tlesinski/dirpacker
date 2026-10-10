@@ -27,6 +27,10 @@ def gen_prefix():
     return f"DIRPCK_{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
 
 
+def _normalized_size(content):
+    return len(content.replace(b'\r', b''))
+
+
 def pack(source_dir, output_file, include_all=False):
     source_dir = os.path.abspath(source_dir)
 
@@ -69,15 +73,16 @@ def pack(source_dir, output_file, include_all=False):
                 for i in range(len(parts) - 1):
                     dirs_with_files.add('/'.join(parts[:i + 1]))
 
+                normalized_size = _normalized_size(content)
                 out.write(f"{prefix}[FILE] {rel_path}\n".encode('utf-8'))
-                out.write(f"{prefix}[SIZE] {len(content)}\n".encode('utf-8'))
+                out.write(f"{prefix}[SIZE] {normalized_size}\n".encode('utf-8'))
                 out.write(f"{prefix}[BEGIN]\n".encode('utf-8'))
                 out.write(content)
                 if not content.endswith(b'\n'):
                     out.write(b'\n')
                 out.write(f"{prefix}[END]\n".encode('utf-8'))
                 packed_count += 1
-                print(f"  [PACK] {rel_path} ({len(content)} bytes)")
+                print(f"  [PACK] {rel_path} ({normalized_size} normalized bytes)")
 
     empty_dirs = sorted(all_dirs - dirs_with_files)
     if empty_dirs:
@@ -153,8 +158,16 @@ def unpack(input_file, output_dir):
 
                 content = _read_until_end(f, end_tag_bytes)
 
-                if content.endswith(b'\n') and expected_size is not None and len(content) > expected_size:
-                    content = content[:-1]
+                if expected_size is not None and _normalized_size(content) > expected_size:
+                    windows_control_lines = begin_line.endswith(b'\r\n')
+                    if (
+                        windows_control_lines
+                        and content.endswith(b'\r\n')
+                        and _normalized_size(content[:-2]) == expected_size
+                    ):
+                        content = content[:-2]
+                    elif content.endswith(b'\n') and _normalized_size(content[:-1]) == expected_size:
+                        content = content[:-1]
 
                 target = os.path.join(output_dir, rel_path)
                 os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -163,8 +176,9 @@ def unpack(input_file, output_dir):
                     fh.write(content)
 
                 count += 1
-                extra = f" (expected {expected_size})" if expected_size is not None and len(content) != expected_size else ""
-                print(f"  [UNPACK] {rel_path} ({len(content)} bytes){extra}")
+                actual_size = _normalized_size(content)
+                extra = f" (expected {expected_size})" if expected_size is not None and actual_size != expected_size else ""
+                print(f"  [UNPACK] {rel_path} ({actual_size} normalized bytes){extra}")
 
             else:
                 print(f"Warning: unknown marker '{line_str}'", file=sys.stderr)
@@ -173,7 +187,16 @@ def unpack(input_file, output_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Pack/unpack directory contents into a single text file.')
+    parser = argparse.ArgumentParser(
+        description='Pack/unpack directory contents into a single text file.',
+        epilog=(
+            'Examples:\n'
+            '  python dirpacker.py pack <source_directory> <output_file.dp>\n'
+            '  python dirpacker.py pack --all <source_directory> <output_file.dp>\n'
+            '  python dirpacker.py unpack <archive.dp> <destination_directory>'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     p_pack = subparsers.add_parser('pack', help='Pack directory into a file')
@@ -185,6 +208,10 @@ def main():
     p_unpack = subparsers.add_parser('unpack', help='Unpack file into a directory')
     p_unpack.add_argument('input_file', help='Packed file to unpack')
     p_unpack.add_argument('output_dir', help='Output directory')
+
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
 
     args = parser.parse_args()
 
