@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+from datetime import datetime
 
 TEXT_EXTENSIONS = {
     '.txt', '.py', '.md', '.json', '.xml', '.html', '.css', '.js',
@@ -22,6 +23,10 @@ def get_rel_path(root_dir, abs_path):
     return os.path.relpath(abs_path, root_dir).replace('\\', '/')
 
 
+def gen_prefix():
+    return f"DIRPCK_{datetime.now().strftime('%Y%m%d_%H%M%S')}_"
+
+
 def pack(source_dir, output_file, include_all=False):
     source_dir = os.path.abspath(source_dir)
 
@@ -29,11 +34,14 @@ def pack(source_dir, output_file, include_all=False):
         print(f"Error: '{source_dir}' is not a directory.", file=sys.stderr)
         sys.exit(1)
 
+    prefix = gen_prefix()
     packed_count = 0
     dirs_with_files = set()
     all_dirs = set()
 
     with open(output_file, 'wb') as out:
+        out.write(f"[DIRPCK] {prefix}\n".encode('utf-8'))
+
         for root, dirs, files in os.walk(source_dir, topdown=True):
             dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
             rel_dir = get_rel_path(source_dir, root)
@@ -61,9 +69,13 @@ def pack(source_dir, output_file, include_all=False):
                 for i in range(len(parts) - 1):
                     dirs_with_files.add('/'.join(parts[:i + 1]))
 
-                out.write(f"[FILE] {rel_path}\n".encode('utf-8'))
-                out.write(f"[SIZE] {len(content)}\n".encode('utf-8'))
+                out.write(f"{prefix}[FILE] {rel_path}\n".encode('utf-8'))
+                out.write(f"{prefix}[SIZE] {len(content)}\n".encode('utf-8'))
+                out.write(f"{prefix}[BEGIN]\n".encode('utf-8'))
                 out.write(content)
+                if not content.endswith(b'\n'):
+                    out.write(b'\n')
+                out.write(f"{prefix}[END]\n".encode('utf-8'))
                 packed_count += 1
                 print(f"  [PACK] {rel_path} ({len(content)} bytes)")
 
@@ -71,10 +83,22 @@ def pack(source_dir, output_file, include_all=False):
     if empty_dirs:
         with open(output_file, 'ab') as out:
             for d in empty_dirs:
-                out.write(f"[DIR] {d}\n".encode('utf-8'))
+                out.write(f"{prefix}[DIR] {d}\n".encode('utf-8'))
                 print(f"  [DIR]  {d} (empty)")
 
     print(f"\nDone. Packed {packed_count} files into '{output_file}'.")
+
+
+def _read_until_end(f, end_marker):
+    parts = []
+    while True:
+        chunk = f.readline()
+        if not chunk:
+            break
+        if chunk.rstrip(b'\r\n') == end_marker:
+            break
+        parts.append(chunk)
+    return b''.join(parts)
 
 
 def unpack(input_file, output_dir):
@@ -84,37 +108,53 @@ def unpack(input_file, output_dir):
     count = 0
 
     with open(input_file, 'rb') as f:
+        first_line = f.readline()
+        if not first_line:
+            print("Error: empty file.", file=sys.stderr)
+            sys.exit(1)
+
+        header = first_line.decode('utf-8-sig').rstrip('\r\n')
+        if not header.startswith('[DIRPCK] '):
+            print("Error: invalid format — missing [DIRPCK] header.", file=sys.stderr)
+            sys.exit(1)
+
+        prefix = header[9:]
+        file_tag = f'{prefix}[FILE] '
+        dir_tag = f'{prefix}[DIR] '
+        size_tag = f'{prefix}[SIZE] '
+        end_tag_bytes = f'{prefix}[END]'.encode('utf-8')
+
         while True:
             line = f.readline()
             if not line:
                 break
 
-            line = line.decode('utf-8').rstrip('\r\n')
-
-            if not line:
+            line_str = line.decode('utf-8').rstrip('\r\n')
+            if not line_str:
                 continue
 
-            if line.startswith('[DIR] '):
-                rel_path = line[6:]
+            if line_str.startswith(dir_tag):
+                rel_path = line_str[len(dir_tag):]
                 target = os.path.join(output_dir, rel_path)
                 os.makedirs(target, exist_ok=True)
                 print(f"  [DIR]  {rel_path}")
 
-            elif line.startswith('[FILE] '):
-                rel_path = line[7:]
+            elif line_str.startswith(file_tag):
+                rel_path = line_str[len(file_tag):]
 
                 size_line = f.readline()
-                if not size_line:
-                    print(f"Error: expected [SIZE] for '{rel_path}'", file=sys.stderr)
-                    break
-                size_line = size_line.decode('utf-8').rstrip('\r\n')
+                expected_size = None
+                if size_line:
+                    sl = size_line.decode('utf-8').rstrip('\r\n')
+                    if sl.startswith(size_tag):
+                        expected_size = int(sl[len(size_tag):])
 
-                if not size_line.startswith('[SIZE] '):
-                    print(f"Error: expected [SIZE], got '{size_line}'", file=sys.stderr)
-                    break
+                begin_line = f.readline()
 
-                size = int(size_line[7:])
-                content = f.read(size)
+                content = _read_until_end(f, end_tag_bytes)
+
+                if content.endswith(b'\n') and expected_size is not None and len(content) > expected_size:
+                    content = content[:-1]
 
                 target = os.path.join(output_dir, rel_path)
                 os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -123,10 +163,11 @@ def unpack(input_file, output_dir):
                     fh.write(content)
 
                 count += 1
-                print(f"  [UNPACK] {rel_path} ({size} bytes)")
+                extra = f" (expected {expected_size})" if expected_size is not None and len(content) != expected_size else ""
+                print(f"  [UNPACK] {rel_path} ({len(content)} bytes){extra}")
 
             else:
-                print(f"Warning: unknown marker '{line.split()[0] if ' ' in line else line}'", file=sys.stderr)
+                print(f"Warning: unknown marker '{line_str}'", file=sys.stderr)
 
     print(f"\nDone. Unpacked {count} files into '{output_dir}'.")
 
